@@ -7,6 +7,9 @@ struct AppUI {
     // 一个 15 * 15 的棋盘，黑子用 1 表示，白子用 2 表示，空位用 0 表示
     board_data: [[u8; 15]; 15],
 
+    // 棋盘网格大小
+    grid_size: f32,
+
     // 棋盘起始点，棋盘左上角距离画布左上角的距离
     start_point: Pos2,
 
@@ -17,6 +20,9 @@ struct AppUI {
     is_winner: bool,
 
     frame: egui::Frame,
+
+    // Store the history of moves for undo functionality
+    move_history: Vec<(usize, usize, u8)>,
 }
 
 impl Default for AppUI {
@@ -29,17 +35,23 @@ impl Default for AppUI {
                 ..Default::default()
             },
             board_data: [[0; 15]; 15],
+            grid_size: 30.0,
             // 棋盘左上角距离画布左上角的距离
             start_point: pos2(15.0, 15.0),
             is_black: true,
             is_winner: false,
+            move_history: Vec::new(),
         }
     }
 }
 
 impl AppUI {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self::default()
+    fn new(_cc: &eframe::CreationContext<'_>, grid_size: f32) -> Self {
+        Self {
+            grid_size,
+            start_point: pos2(grid_size / 2., grid_size / 2.),
+            ..Default::default()
+        }
     }
 
     /// 绘制棋盘
@@ -48,14 +60,14 @@ impl AppUI {
 
         // 先画横线
         for i in 0..15 {
-            let start = self.start_point + egui::Vec2::new(0.0, i as f32 * 30.0);
-            let end = start + egui::Vec2::new(420.0, 0.0);
+            let start = self.start_point + egui::Vec2::new(0.0, i as f32 * self.grid_size);
+            let end = start + egui::Vec2::new(14. * self.grid_size, 0.0);
             ui.painter().line_segment([start, end], stroke);
         }
         // 再画竖线
         for i in 0..15 {
-            let start = self.start_point + egui::Vec2::new(i as f32 * 30.0, 0.0);
-            let end = start + egui::Vec2::new(0.0, 420.0);
+            let start = self.start_point + egui::Vec2::new(i as f32 * self.grid_size, 0.0);
+            let end = start + egui::Vec2::new(0.0, 14. * self.grid_size);
             ui.painter().line_segment([start, end], stroke);
         }
     }
@@ -63,7 +75,7 @@ impl AppUI {
     /// 画圆
     fn render_circle(&self, ui: &Ui, center: egui::Pos2, color: Color32, stroke_color: Color32) {
         let stroke = egui::Stroke::new(1.0, stroke_color);
-        ui.painter().circle(center, 14.0, color, stroke)
+        ui.painter().circle(center, 14.0 / 30.0 * self.grid_size, color, stroke)
     }
 
     /// 画白子
@@ -94,18 +106,30 @@ impl AppUI {
         // start + ( 30 * x, 30 * y )
         let x = x as f32;
         let y = y as f32;
-        self.start_point + egui::Vec2::new(30.0 * x, 30.0 * y)
+        self.start_point + egui::Vec2::new(self.grid_size * x, self.grid_size * y)
+    }
+
+    /// Undo the last move
+    fn undo_move(&mut self) {
+        if let Some((x, y, _)) = self.move_history.pop() {
+            self.board_data[x][y] = 0;
+            self.is_black = !self.is_black;
+            self.is_winner = false;
+        }
     }
 
     /// 处理鼠标点击事件
     fn handle_click(&mut self, pos: Pos2) {
         // 首先 xy 都减去 15，然后除以 30，然后四舍五入
-        let x = ((pos.x - 15.0) / 30.0).round() as usize;
-        let y = ((pos.y - 15.0) / 30.0).round() as usize;
+        let x = ((pos.x - self.grid_size / 2.) / self.grid_size).round() as usize;
+        let y = ((pos.y - self.grid_size / 2.) / self.grid_size).round() as usize;
         // 如果点击了棋盘以外的空间，或者该点位已有棋子，什么事都不做
         if x > 14 || y > 14 || self.board_data[x][y] != 0 {
             return;
         }
+        // Save the move to history before making changes
+        self.move_history.push((x, y, self.board_data[x][y]));
+
         self.board_data[x][y] = if self.is_black { 1 } else { 2 };
         if self.check_winner(x, y) {
             self.is_winner = true;
@@ -203,6 +227,7 @@ impl AppUI {
         self.board_data = [[0; 15]; 15];
         self.is_black = true;
         self.is_winner = false;
+        self.move_history.clear();
     }
 }
 
@@ -213,6 +238,15 @@ impl eframe::App for AppUI {
             .show(ctx, |ui| {
                 self.render_board(ui);
                 self.render_piece(ui);
+
+                ui.with_layout(egui::Layout::top_down(egui::Align::Max),|ui| {
+                    if ui.button("Undo").clicked() {
+                        self.undo_move();
+                    };
+                    if ui.button("Restart").clicked() {
+                        self.restart();
+                    }
+                });
 
                 if self.is_winner {
                     let text = if self.is_black {
@@ -242,10 +276,11 @@ impl eframe::App for AppUI {
 }
 
 fn main() {
+    let grid_size = 40.0f32;
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::Vec2::new(450.0, 450.0)),
+        initial_window_size: Some(egui::Vec2::new(grid_size*15.0+50.0, grid_size*15.0)),
         resizable: false,
         ..Default::default()
     };
-    eframe::run_native("Gomoku", options, Box::new(|cc| Box::new(AppUI::new(cc)))).unwrap();
+    eframe::run_native("Gomoku", options, Box::new(|cc| Box::new(AppUI::new(cc, 40.0)))).unwrap();
 }
