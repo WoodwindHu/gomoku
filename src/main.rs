@@ -75,7 +75,8 @@ impl AppUI {
     /// 画圆
     fn render_circle(&self, ui: &Ui, center: egui::Pos2, color: Color32, stroke_color: Color32) {
         let stroke = egui::Stroke::new(1.0, stroke_color);
-        ui.painter().circle(center, 14.0 / 30.0 * self.grid_size, color, stroke)
+        ui.painter()
+            .circle(center, 14.0 / 30.0 * self.grid_size, color, stroke)
     }
 
     /// 画白子
@@ -239,7 +240,7 @@ impl eframe::App for AppUI {
                 self.render_board(ui);
                 self.render_piece(ui);
 
-                ui.with_layout(egui::Layout::top_down(egui::Align::Max),|ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
                     if ui.button("Undo").clicked() {
                         self.undo_move();
                     };
@@ -278,9 +279,14 @@ impl eframe::App for AppUI {
 fn main() {
     let grid_size = 40.0f32;
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::Vec2::new(grid_size*15.0+50.0, grid_size*15.0)),
+        initial_window_size: Some(egui::Vec2::new(grid_size * 15.0 + 50.0, grid_size * 15.0)),
         resizable: false,
         ..Default::default()
     };
-    eframe::run_native("Gomoku", options, Box::new(|cc| Box::new(AppUI::new(cc, 40.0)))).unwrap();
+    eframe::run_native(
+        "Gomoku",
+        options,
+        Box::new(move |cc| Box::new(AppUI::new(cc, grid_size))),
+    )
+    .unwrap();
 }
